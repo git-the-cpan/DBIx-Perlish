@@ -9,7 +9,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS $SQL @BIND_VALUES);
 require Exporter;
 use base 'Exporter';
 
-$VERSION = '0.63';
+$VERSION = '0.64';
 @EXPORT = qw(db_fetch db_select db_update db_delete db_insert sql);
 @EXPORT_OK = qw(union intersect except);
 %EXPORT_TAGS = (all => [@EXPORT, @EXPORT_OK]);
@@ -256,14 +256,18 @@ sub insert
 	my $me = ref $moi ? $moi : {};
 
 	my $dbh = $me->{dbh} || get_dbh(3);
+	my %sth;
 	for my $row (@rows) {
+		my @keys = sort keys %$row;
 		my $sql = "insert into $table (";
-		$sql .= join ",", keys %$row;
+		$sql .= join ",", @keys;
 		$sql .= ") values (";
 		my (@v, @b);
-		for my $v (values %$row) {
+		my $skip_prepare;
+		for my $v (@$row{@keys}) {
 			if (ref $v eq 'CODE') {
 				push @v, scalar $v->();
+				$skip_prepare = 1;
 			} else {
 				push @v, "?";
 				push @b, $v;
@@ -271,7 +275,13 @@ sub insert
 		}
 		$sql .= join ",", @v;
 		$sql .= ")";
-		return undef unless defined $dbh->do($sql, {}, @b);
+		if ($skip_prepare) {
+			return undef unless defined $dbh->do($sql, {}, @b);
+		} else {
+			my $k = join ";", @keys;
+			$sth{$k} ||= $dbh->prepare($sql);
+			return undef unless defined $sth{$k}->execute(@b);
+		}
 	}
 	return scalar @rows;
 }
@@ -434,7 +444,7 @@ DBIx::Perlish - a perlish interface to SQL databases
 
 =head1 VERSION
 
-This document describes DBIx::Perlish version 0.63
+This document describes DBIx::Perlish version 0.64
 
 
 =head1 SYNOPSIS
